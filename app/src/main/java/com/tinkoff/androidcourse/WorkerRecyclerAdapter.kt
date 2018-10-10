@@ -6,10 +6,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import java.util.*
 
-class WorkerRecyclerAdapter : RecyclerView.Adapter<WorkerRecyclerAdapter.WorkerViewHolder>() {
+class WorkerRecyclerAdapter : RecyclerView.Adapter<WorkerRecyclerAdapter.WorkerViewHolder>(), MainActivity.ItemTouchHelperAdapter {
 
-    var workers = listOf<Worker>()
+    var workers = mutableListOf<Worker>()
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): WorkerViewHolder =
             WorkerViewHolder(LayoutInflater.from(parent.context).inflate(R.layout.item_worker_list, parent, false))
@@ -18,6 +19,16 @@ class WorkerRecyclerAdapter : RecyclerView.Adapter<WorkerRecyclerAdapter.WorkerV
 
     override fun onBindViewHolder(holder: WorkerViewHolder, position: Int) {
         holder.bind(workers[position])
+    }
+
+    override fun onItemMove(from: Int, to: Int) {
+        Collections.swap(workers, from, to)
+        notifyItemMoved(from, to)
+    }
+
+    override fun onItemDismiss(position: Int) {
+        workers.removeAt(position)
+        notifyItemRemoved(position)
     }
 
 

@@ -1,5 +1,8 @@
 package com.tinkoff.androidcourse;
 
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v7.app.AppCompatActivity;
@@ -11,13 +14,10 @@ import android.util.Pair;
 import android.view.View;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Callable;
 
 import io.reactivex.Single;
 import io.reactivex.android.schedulers.AndroidSchedulers;
-import io.reactivex.functions.Consumer;
 import io.reactivex.schedulers.Schedulers;
 
 public class MainActivity extends AppCompatActivity {
@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity {
 
         RecyclerView recyclerView = findViewById(R.id.recyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        recyclerView.addItemDecoration(new MyItemDecoration(this, R.dimen.card_insets));
+        recyclerView.addItemDecoration(new MyItemDecoration(this));
 
         workers = WorkerGenerator.generateWorkers(7);
 
@@ -39,58 +39,20 @@ public class MainActivity extends AppCompatActivity {
         adapter.setWorkers(workers);
         recyclerView.setAdapter(adapter);
 
-        ItemTouchHelper.Callback callback = new ItemTouchHelper.Callback() {
-
-            @Override
-            public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
-                int dragFlag = ItemTouchHelper.UP | ItemTouchHelper.DOWN;
-                int swipeFlags = ItemTouchHelper.START | ItemTouchHelper.END;
-                return makeMovementFlags(dragFlag, swipeFlags);
-            }
-
-            @Override
-            public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
-                int from = viewHolder.getAdapterPosition();
-                int to = target.getAdapterPosition();
-                Collections.swap(adapter.getWorkers(), from, to);
-                adapter.notifyItemMoved(from, to);
-                return true;
-            }
-
-            @Override
-            public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
-                int removedPosition = viewHolder.getAdapterPosition();
-                adapter.getWorkers().remove(removedPosition);
-                adapter.notifyItemRemoved(removedPosition);
-            }
-        };
+        ItemTouchHelper.Callback callback = new MyItemTouchCallback(adapter);
 
         ItemTouchHelper ith = new ItemTouchHelper(callback);
         ith.attachToRecyclerView(recyclerView);
 
         FloatingActionButton fab = findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-
-                Single.fromCallable(new Callable<Pair<List<Worker>, DiffUtil.DiffResult>>() {
-                    @Override
-                    public Pair<List<Worker>, DiffUtil.DiffResult> call() {
-
-                        List<Worker> newWorkers = getNewWorkers(adapter.getWorkers());
-                        DiffUtil.DiffResult dr = DiffUtil.calculateDiff(new WorkerDiffCallback(adapter.getWorkers(), newWorkers), false);
-                        return new Pair<>(newWorkers, dr);
-                    }
-                }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Pair<List<Worker>, DiffUtil.DiffResult>>() {
-                    @Override
-                    public void accept(Pair<List<Worker>, DiffUtil.DiffResult> pair) {
-                        adapter.setWorkers(pair.first);
-                        pair.second.dispatchUpdatesTo(adapter);
-                    }
-                });
-
-            }
-        });
+        fab.setOnClickListener(view -> Single.fromCallable(() -> {
+            List<Worker> newWorkers = getNewWorkers(adapter.getWorkers());
+            DiffUtil.DiffResult dr = DiffUtil.calculateDiff(new WorkerDiffCallback(adapter.getWorkers(), newWorkers), false);
+            return new Pair<>(newWorkers, dr);
+        }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe(pair -> {
+            adapter.setWorkers(pair.first);
+            pair.second.dispatchUpdatesTo(adapter);
+        }));
     }
 
     private List<Worker> getNewWorkers(List<Worker> oldWorkers) {
@@ -102,6 +64,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return newWorkers;
+    }
+
+    interface ItemTouchHelperAdapter {
+        void onItemMove(int from, int to);
+
+        void onItemDismiss(int position);
     }
 
     class WorkerDiffCallback extends DiffUtil.Callback {
@@ -134,4 +102,65 @@ public class MainActivity extends AppCompatActivity {
             return oldWorkers.get(oldItemPosition).equals(newWorkers.get(newItemPosition));
         }
     }
+
+    class MyItemTouchCallback extends ItemTouchHelper.Callback {
+
+        private float COLOR_HUE = 0;
+        private float COLOR_BRIGHTNESS = 1;
+
+        private Paint paint = new Paint();
+
+        private final ItemTouchHelperAdapter adapter;
+
+        MyItemTouchCallback(ItemTouchHelperAdapter adapter) {
+            this.adapter = adapter;
+        }
+
+        @Override
+        public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
+            int dragFlag = ItemTouchHelper.UP | ItemTouchHelper.DOWN;
+            int swipeFlags = ItemTouchHelper.START | ItemTouchHelper.END;
+            return makeMovementFlags(dragFlag, swipeFlags);
+        }
+
+        @Override
+        public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder
+                viewHolder, RecyclerView.ViewHolder target) {
+            int from = viewHolder.getAdapterPosition();
+            int to = target.getAdapterPosition();
+            adapter.onItemMove(from, to);
+            return true;
+        }
+
+        @Override
+        public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+            adapter.onItemDismiss(viewHolder.getAdapterPosition());
+        }
+
+        @Override
+        public void onChildDraw(Canvas c, RecyclerView recyclerView, RecyclerView.ViewHolder
+                viewHolder, float dX, float dY, int actionState, boolean isCurrentlyActive) {
+            super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
+
+
+            if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) {
+                View view = viewHolder.itemView;
+                RecyclerView.LayoutParams params = (RecyclerView.LayoutParams) view.getLayoutParams();
+                int width = view.getRight() + params.rightMargin;
+                int color;
+                if (dX == 0) {
+                    color = Color.rgb(255, 255, 255);
+                } else {
+                    color = Color.HSVToColor(new float[]{COLOR_HUE, Math.abs(dX) / width, COLOR_BRIGHTNESS});
+                }
+
+                paint.setColor(color);
+
+                c.drawRect(view.getLeft() - params.leftMargin, view.getTop() - params.topMargin, view.getRight() + params.rightMargin, view.getBottom() + params.bottomMargin, paint);
+            }
+
+
+        }
+    }
+
 }
